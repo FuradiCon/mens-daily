@@ -43,7 +43,8 @@ load_dotenv(ENV_PATH)
 
 MODEL = "claude-sonnet-5"
 MAX_ATTEMPTS = 6
-HISTORY_LOOKBACK_DAYS = 30
+HISTORY_LOOKBACK_DAYS = 120  # how far back "do not repeat" applies, both in the prompt and the hard check below
+HISTORY_RETENTION_DAYS = 180  # how long entries stay in history.json before being pruned
 
 MIN_DURATION_SECONDS = 5 * 60
 MAX_DURATION_SECONDS = 10 * 60
@@ -199,6 +200,31 @@ def validate_video(url, youtube_api_key):
     }, None
 
 
+def is_duplicate(candidate, history, lookback_days):
+    """Hard check backing up the prompt's "don't repeat" instruction — the
+    model can ignore instructions, but this always rejects an exact repeat
+    of a reference or video within the lookback window."""
+    cutoff = datetime.now(timezone.utc).timestamp() - lookback_days * 86400
+    ref = (candidate.get("verse", {}).get("reference") or "").strip().lower()
+    url = candidate.get("video", {}).get("url") or ""
+    video_match = YOUTUBE_URL_RE.search(url)
+    video_id = video_match.group(1) if video_match else None
+
+    for entry in history:
+        if _safe_ts(entry.get("date")) < cutoff:
+            continue
+        if ref and (entry.get("reference") or "").strip().lower() == ref:
+            return f'"{candidate["verse"]["reference"]}" was already used on {entry["date"]}. Pick a different verse.'
+        entry_match = YOUTUBE_URL_RE.search(entry.get("videoUrl") or "")
+        entry_id = entry_match.group(1) if entry_match else None
+        if video_id and entry_id and video_id == entry_id:
+            return (
+                f'That video was already used on {entry["date"]} (for {entry.get("reference", "?")}). '
+                f"Pick a different video."
+            )
+    return None
+
+
 def parse_iso8601_duration(duration):
     match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
     if not match:
@@ -228,6 +254,13 @@ def main():
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             candidate = ask_claude(client, history_text, feedback)
+
+            dup_reason = is_duplicate(candidate, history, HISTORY_LOOKBACK_DAYS)
+            if dup_reason:
+                print(f"Attempt {attempt}: rejected — {dup_reason}", file=sys.stderr)
+                feedback = dup_reason
+                continue
+
             video_info, error = validate_video(candidate.get("video", {}).get("url"), youtube_api_key)
             if error:
                 print(f"Attempt {attempt}: rejected — {error}", file=sys.stderr)
@@ -263,7 +296,7 @@ def main():
         "reference": accepted["verse"]["reference"],
         "videoUrl": accepted["video"]["url"],
     })
-    cutoff = datetime.now(timezone.utc).timestamp() - HISTORY_LOOKBACK_DAYS * 4 * 86400
+    cutoff = datetime.now(timezone.utc).timestamp() - HISTORY_RETENTION_DAYS * 86400
     history = [
         h for h in history
         if _safe_ts(h.get("date")) >= cutoff
