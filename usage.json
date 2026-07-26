@@ -1,0 +1,20 @@
+[
+  {
+    "date": "2026-07-26",
+    "attempts": 5,
+    "inputTokens": 1022808,
+    "outputTokens": 14444,
+    "webSearches": 40,
+    "estimatedCostUsd": 2.5901,
+    "published": true
+  },
+  {
+    "date": "2026-07-26",
+    "attempts": 3,
+    "inputTokens": 134296,
+    "outputTokens": 3817,
+    "webSearches": 9,
+    "estimatedCostUsd": 0.3968,
+    "published": true
+  }
+]

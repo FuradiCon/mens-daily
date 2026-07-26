@@ -22,6 +22,7 @@ import requests
 ROOT = Path(__file__).resolve().parent.parent
 DATA_PATH = ROOT / "data.json"
 HISTORY_PATH = ROOT / "history.json"
+USAGE_PATH = ROOT / "usage.json"
 ENV_PATH = ROOT / ".env"
 
 
@@ -45,6 +46,13 @@ MODEL = "claude-sonnet-5"
 MAX_ATTEMPTS = 6
 HISTORY_LOOKBACK_DAYS = 120  # how far back "do not repeat" applies, both in the prompt and the hard check below
 HISTORY_RETENTION_DAYS = 180  # how long entries stay in history.json before being pruned
+USAGE_RETENTION_DAYS = 180
+
+# Claude Sonnet 5 introductory pricing (through 2026-08-31) — update these if
+# either the model or its pricing changes. See platform.claude.com/docs/en/about-claude/pricing.
+INPUT_USD_PER_MTOK = 2.0
+OUTPUT_USD_PER_MTOK = 10.0
+WEB_SEARCH_USD_PER_1000 = 10.0
 
 MIN_DURATION_SECONDS = 5 * 60
 MAX_DURATION_SECONDS = 10 * 60
@@ -56,24 +64,29 @@ YOUTUBE_URL_RE = re.compile(
 SYSTEM_PROMPT = """You are curating content for a men's daily Bible study page focused on \
 manhood and fatherhood.
 
+Be efficient with research: a couple of well-chosen searches per step is enough. You do \
+NOT need to open every result, cross-check multiple sources, or exhaustively verify \
+before answering — a separate system independently re-verifies the video's exact \
+duration afterward and will tell you specifically what to fix if you're wrong, so a \
+good, quick, specific guess is more valuable than an exhaustive one.
+
 You must:
 1. Select ONE Bible verse (or short passage, max 2 verses) in the New Living \
 Translation (NLT) that speaks to manhood, fatherhood, or leading a family well. \
-Do not reuse any reference in the "recently used" list below. Use the web search \
-tool to confirm the exact NLT wording (e.g. search Bible Gateway for the reference \
-plus "NLT") rather than relying purely on memory — word-for-word accuracy matters.
-2. Use the web search tool to find ONE real, currently-live YouTube video that \
-closely relates to that verse's theme. It MUST be:
+Do not reuse any reference in the "recently used" list below. One quick search to \
+confirm the exact NLT wording (e.g. the reference plus "NLT") is enough — don't \
+cross-check multiple sites for this.
+2. One or two searches to find ONE real, currently-live YouTube video that closely \
+relates to that verse's theme. It MUST be:
    - a standard long-form video (a normal /watch?v= URL), NOT a YouTube Short
    - talking-head / vlog style: someone speaking directly to camera (sermon clip, \
 devotional, vlog), not pure cinematic B-roll
-   - BETWEEN 5:00 AND 10:00 IN LENGTH — this is a hard requirement, not approximate. \
-Full sermons and long teaching videos (15+ minutes) are too long and will be rejected. \
-Search results usually show the duration next to the title/thumbnail — read it \
-carefully before picking a candidate, and if you're unsure of the exact length, \
-open the video's page or check multiple sources to confirm it before finalizing. \
-Favor short devotional clips, "daily encouragement" style videos, or sermon EXCERPTS \
-rather than full-length sermons, which tend to run this short.
+   - approximately 5 to 10 minutes long — go with the best duration estimate the \
+search results give you (search snippets usually show it next to the title); the \
+video's exact length gets independently verified after you answer, so don't spend \
+extra searches confirming it yourself. Favor short devotional clips, "daily \
+encouragement" style videos, or sermon excerpts, which tend to run this short, over \
+full-length sermons.
    Do not reuse any video URL in the "recently used" list below.
 3. Write a short, practical, 2-3 sentence reflection connecting the verse to \
 everyday fatherhood/manhood — warm and direct, not preachy.
@@ -121,7 +134,23 @@ def extract_json(text):
     return json.loads(match.group(0))
 
 
+def usage_from_response(response):
+    u = response.usage
+    web_searches = 0
+    stu = getattr(u, "server_tool_use", None)
+    if stu is not None:
+        web_searches = getattr(stu, "web_search_requests", 0) or 0
+    return {
+        "input_tokens": getattr(u, "input_tokens", 0) or 0,
+        "output_tokens": getattr(u, "output_tokens", 0) or 0,
+        "web_searches": web_searches,
+    }
+
+
 def ask_claude(client, history_text, feedback=None):
+    """Returns (candidate_or_None, usage, error_or_None). Usage is always
+    populated when the API call itself succeeds — even a response with no
+    parseable JSON still cost real tokens/searches and must be counted."""
     user_prompt = f"Recently used verses/videos (do not repeat):\n{history_text}"
     if feedback:
         user_prompt += f"\n\nYour previous pick was rejected: {feedback}\nPlease try again with a different verse and/or video."
@@ -130,14 +159,21 @@ def ask_claude(client, history_text, feedback=None):
         model=MODEL,
         max_tokens=4096,
         system=SYSTEM_PROMPT,
-        tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 8}],
+        tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
         messages=[{"role": "user", "content": user_prompt}],
     )
+    usage = usage_from_response(response)
 
     text_blocks = [b.text for b in response.content if getattr(b, "type", None) == "text"]
     if not text_blocks:
-        raise ValueError("Model returned no text content")
-    return extract_json(text_blocks[-1])
+        return None, usage, "Model returned no text content"
+
+    try:
+        candidate = extract_json(text_blocks[-1])
+    except (ValueError, json.JSONDecodeError) as exc:
+        return None, usage, f"Could not parse model output as JSON: {exc}"
+
+    return candidate, usage, None
 
 
 def validate_video(url, youtube_api_key):
@@ -238,6 +274,35 @@ def format_duration(total_seconds):
     return f"{minutes}:{seconds:02d}"
 
 
+def estimate_cost_usd(run_usage):
+    input_cost = run_usage["input_tokens"] / 1_000_000 * INPUT_USD_PER_MTOK
+    output_cost = run_usage["output_tokens"] / 1_000_000 * OUTPUT_USD_PER_MTOK
+    search_cost = run_usage["web_searches"] / 1000 * WEB_SEARCH_USD_PER_1000
+    return round(input_cost + output_cost + search_cost, 4)
+
+
+def record_usage(today, run_usage, published):
+    cost = estimate_cost_usd(run_usage)
+    usage_history = load_json(USAGE_PATH, [])
+    usage_history.append({
+        "date": today,
+        "attempts": run_usage["attempts"],
+        "inputTokens": run_usage["input_tokens"],
+        "outputTokens": run_usage["output_tokens"],
+        "webSearches": run_usage["web_searches"],
+        "estimatedCostUsd": cost,
+        "published": published,
+    })
+    cutoff = datetime.now(timezone.utc).timestamp() - USAGE_RETENTION_DAYS * 86400
+    usage_history = [u for u in usage_history if _safe_ts(u.get("date")) >= cutoff]
+    USAGE_PATH.write_text(json.dumps(usage_history, indent=2) + "\n", encoding="utf-8")
+    print(
+        f"Usage: {run_usage['attempts']} attempt(s), "
+        f"{run_usage['input_tokens']} in / {run_usage['output_tokens']} out tokens, "
+        f"{run_usage['web_searches']} web searches, est. ${cost:.4f}"
+    )
+
+
 def main():
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if not anthropic_key:
@@ -249,38 +314,53 @@ def main():
     history = load_json(HISTORY_PATH, [])
     history_text = recent_history_text(history)
 
+    run_usage = {"attempts": 0, "input_tokens": 0, "output_tokens": 0, "web_searches": 0}
     feedback = None
     accepted = None
+
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            candidate = ask_claude(client, history_text, feedback)
-
-            dup_reason = is_duplicate(candidate, history, HISTORY_LOOKBACK_DAYS)
-            if dup_reason:
-                print(f"Attempt {attempt}: rejected — {dup_reason}", file=sys.stderr)
-                feedback = dup_reason
-                continue
-
-            video_info, error = validate_video(candidate.get("video", {}).get("url"), youtube_api_key)
-            if error:
-                print(f"Attempt {attempt}: rejected — {error}", file=sys.stderr)
-                feedback = error
-                continue
-
-            candidate["video"]["thumbnail"] = video_info["thumbnail"]
-            if video_info["duration_seconds"] is not None:
-                candidate["video"]["duration"] = format_duration(video_info["duration_seconds"])
-            accepted = candidate
-            break
-        except Exception as exc:  # noqa: BLE001 - broad by design, this must never crash the Action
+            candidate, usage, ask_error = ask_claude(client, history_text, feedback)
+        except Exception as exc:  # noqa: BLE001 - a real API/network failure, no usage to record
             print(f"Attempt {attempt}: error — {exc}", file=sys.stderr)
             feedback = str(exc)
+            continue
+
+        run_usage["attempts"] += 1
+        run_usage["input_tokens"] += usage["input_tokens"]
+        run_usage["output_tokens"] += usage["output_tokens"]
+        run_usage["web_searches"] += usage["web_searches"]
+
+        if ask_error:
+            print(f"Attempt {attempt}: rejected — {ask_error}", file=sys.stderr)
+            feedback = ask_error
+            continue
+
+        dup_reason = is_duplicate(candidate, history, HISTORY_LOOKBACK_DAYS)
+        if dup_reason:
+            print(f"Attempt {attempt}: rejected — {dup_reason}", file=sys.stderr)
+            feedback = dup_reason
+            continue
+
+        video_info, error = validate_video(candidate.get("video", {}).get("url"), youtube_api_key)
+        if error:
+            print(f"Attempt {attempt}: rejected — {error}", file=sys.stderr)
+            feedback = error
+            continue
+
+        candidate["video"]["thumbnail"] = video_info["thumbnail"]
+        if video_info["duration_seconds"] is not None:
+            candidate["video"]["duration"] = format_duration(video_info["duration_seconds"])
+        accepted = candidate
+        break
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    record_usage(today, run_usage, published=accepted is not None)
 
     if accepted is None:
         print("All attempts failed; leaving existing data.json untouched.", file=sys.stderr)
         sys.exit(0)
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     entry = {
         "date": today,
         "verse": accepted["verse"],
