@@ -1,4 +1,4 @@
-name: Daily verse update
+name: Daily Verse Update
 
 on:
   schedule:
