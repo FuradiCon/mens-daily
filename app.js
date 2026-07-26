@@ -23,10 +23,25 @@ function watchIcon(){
   </svg>`;
 }
 
+function extractVideoId(url){
+  const match = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/.exec(url || '');
+  return match ? match[1] : null;
+}
+
+function playInline(button, videoId){
+  button.classList.add('is-playing');
+  button.innerHTML = `<iframe
+      src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0"
+      title="YouTube video player"
+      allow="autoplay; encrypted-media; picture-in-picture"
+      allowfullscreen></iframe>`;
+}
+
 function render(entry){
   const stage = document.getElementById('stage');
   const v = entry.verse || {};
   const vid = entry.video || {};
+  const videoId = extractVideoId(vid.url);
 
   stage.innerHTML = `
     <section class="card verse-card">
@@ -39,16 +54,20 @@ function render(entry){
 
     <section class="card">
       <p class="section-label">Today's Video</p>
-      <a class="video-thumb" href="${escapeHtml(vid.url || '#')}" target="_blank" rel="noopener noreferrer" aria-label="Watch: ${escapeHtml(vid.title || '')}">
+      ${videoId ? `
+      <button class="video-thumb" type="button" data-video-id="${videoId}" aria-label="Play: ${escapeHtml(vid.title || '')}">
         <img src="${escapeHtml(vid.thumbnail || 'https://placehold.co/640x360/2A241D/B7A996?text=Video')}" alt="${escapeHtml(vid.title || 'Video thumbnail')}" loading="lazy">
         <span class="play-badge"><span class="play-circle">${playIcon()}</span></span>
         ${vid.duration ? `<span class="duration-badge mono">${escapeHtml(vid.duration)}</span>` : ''}
-      </a>
+      </button>` : `
+      <div class="video-thumb">
+        <img src="https://placehold.co/640x360/2A241D/B7A996?text=Video" alt="Video coming soon">
+      </div>`}
       <div class="video-meta">
         <h3>${escapeHtml(vid.title || 'Video coming soon')}</h3>
         <p class="channel">${escapeHtml(vid.channel || '')}</p>
         <a class="btn" href="${escapeHtml(vid.url || '#')}" target="_blank" rel="noopener noreferrer">
-          Watch video ${watchIcon()}
+          Watch on YouTube ${watchIcon()}
         </a>
       </div>
     </section>
@@ -59,6 +78,11 @@ function render(entry){
       <p>${escapeHtml(entry.reflection)}</p>
     </section>` : ''}
   `;
+
+  const thumb = stage.querySelector('.video-thumb[data-video-id]');
+  if(thumb){
+    thumb.addEventListener('click', () => playInline(thumb, thumb.dataset.videoId), { once: true });
+  }
 }
 
 async function init(){

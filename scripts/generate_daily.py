@@ -1,5 +1,5 @@
 """
-Daily pipeline for the Men's Daily Bible Study page.
+Daily pipeline for the "Scattered to Steadfast" page.
 
 Uses the Anthropic API (with the web search tool) to pick a fresh NLT verse
 about manhood/fatherhood, find a real 5-10 minute talking-head YouTube video

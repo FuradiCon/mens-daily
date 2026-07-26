@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Men's Daily Bible Study</title>
+<title>Scattered to Steadfast</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -73,7 +73,7 @@
       radial-gradient(60% 50% at 18% 8%,  rgba(198,145,63,.16), transparent 60%),
       radial-gradient(50% 45% at 88% 92%, rgba(198,145,63,.10), transparent 65%),
       linear-gradient(180deg, rgba(15,13,10,.5), rgba(15,13,10,.88)),
-      url('background.jpg') center / cover no-repeat,
+      url('BG1.jpg') center / cover no-repeat,
       linear-gradient(160deg, #201A12 0%, #14110D 55%, #100D0A 100%);
   }
   .bg-grain{
@@ -87,7 +87,7 @@
 
   /* ------------------------------- shell --------------------------------- */
   .app{
-    max-width: 720px;
+    max-width: 1440px;
     margin: 0 auto;
     padding: var(--s7) var(--s5) var(--s8);
   }
@@ -186,18 +186,32 @@
 
   /* ------------------------------ video card ------------------------------ */
   .video-thumb{
+    display: block;
+    width: 100%;
     position: relative;
     border-radius: var(--r-md);
     overflow: hidden;
     margin-bottom: var(--s4);
     background: var(--surface-sunk);
     aspect-ratio: 16 / 9;
+    border: none;
+    padding: 0;
+    cursor: pointer;
   }
   .video-thumb img{
     width: 100%; height: 100%;
     object-fit: cover;
     filter: saturate(1.05);
   }
+  .video-thumb iframe{
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    border: 0;
+  }
+  .video-thumb.is-playing::after,
+  .video-thumb.is-playing .duration-badge,
+  .video-thumb.is-playing .play-badge{ display: none; }
+  .video-thumb.is-playing{ cursor: default; }
   .video-thumb::after{
     content: '';
     position: absolute; inset: 0;
@@ -328,9 +342,9 @@
   <header class="masthead">
     <div class="eyebrow">
       <span class="eyebrow-dot"></span>
-      <span class="eyebrow-text">Men's Daily Bible Study</span>
+      <span class="eyebrow-text">Building Men Who Show Up</span>
     </div>
-    <h1>Standing Firm, One Day at a Time</h1>
+    <h1>Scattered to Steadfast</h1>
     <div class="date mono" id="todayDate">&nbsp;</div>
   </header>
 
