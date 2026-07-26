@@ -22,9 +22,27 @@ import requests
 ROOT = Path(__file__).resolve().parent.parent
 DATA_PATH = ROOT / "data.json"
 HISTORY_PATH = ROOT / "history.json"
+ENV_PATH = ROOT / ".env"
+
+
+def load_dotenv(path):
+    """Minimal .env loader for local runs (GitHub Actions supplies these via secrets instead)."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+load_dotenv(ENV_PATH)
 
 MODEL = "claude-sonnet-5"
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 6
 HISTORY_LOOKBACK_DAYS = 30
 
 MIN_DURATION_SECONDS = 5 * 60
@@ -48,7 +66,13 @@ closely relates to that verse's theme. It MUST be:
    - a standard long-form video (a normal /watch?v= URL), NOT a YouTube Short
    - talking-head / vlog style: someone speaking directly to camera (sermon clip, \
 devotional, vlog), not pure cinematic B-roll
-   - approximately 5 to 10 minutes long
+   - BETWEEN 5:00 AND 10:00 IN LENGTH — this is a hard requirement, not approximate. \
+Full sermons and long teaching videos (15+ minutes) are too long and will be rejected. \
+Search results usually show the duration next to the title/thumbnail — read it \
+carefully before picking a candidate, and if you're unsure of the exact length, \
+open the video's page or check multiple sources to confirm it before finalizing. \
+Favor short devotional clips, "daily encouragement" style videos, or sermon EXCERPTS \
+rather than full-length sermons, which tend to run this short.
    Do not reuse any video URL in the "recently used" list below.
 3. Write a short, practical, 2-3 sentence reflection connecting the verse to \
 everyday fatherhood/manhood — warm and direct, not preachy.
@@ -159,7 +183,12 @@ def validate_video(url, youtube_api_key):
     iso_duration = items[0]["contentDetails"]["duration"]
     duration_seconds = parse_iso8601_duration(iso_duration)
     if not (MIN_DURATION_SECONDS <= duration_seconds <= MAX_DURATION_SECONDS):
-        return None, f"Video is {duration_seconds}s long, outside the 5-10 minute window"
+        actual = format_duration(duration_seconds)
+        direction = "too long" if duration_seconds > MAX_DURATION_SECONDS else "too short"
+        return None, (
+            f'"{items[0]["snippet"]["title"]}" is actually {actual} long ({direction}). '
+            f"Need a different video between 5:00 and 10:00."
+        )
 
     return {
         "video_id": video_id,
