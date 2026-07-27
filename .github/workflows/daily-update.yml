@@ -32,8 +32,9 @@ jobs:
         run: python scripts/generate_daily.py
 
       - name: Record page traffic
+        continue-on-error: true  # a secondary metric must never block the day's actual content from publishing
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TRAFFIC_PAT }}
         run: python scripts/record_traffic.py
 
       - name: Commit and push if changed
