@@ -2,7 +2,7 @@
 Daily pipeline for the "Scattered to Steadfast" page.
 
 Uses the Anthropic API (with the web search tool) to pick a fresh NLT verse
-about manhood/fatherhood, find a real 5-10 minute talking-head YouTube video
+about manhood/fatherhood, find a real 2-10 minute talking-head YouTube video
 that matches it, and write a short reflection. The video is independently
 verified against the YouTube oEmbed endpoint and the YouTube Data API before
 anything is published, so a hallucinated URL or duration never reaches the
@@ -54,7 +54,7 @@ INPUT_USD_PER_MTOK = 2.0
 OUTPUT_USD_PER_MTOK = 10.0
 WEB_SEARCH_USD_PER_1000 = 10.0
 
-MIN_DURATION_SECONDS = 5 * 60
+MIN_DURATION_SECONDS = 2 * 60
 MAX_DURATION_SECONDS = 10 * 60
 
 YOUTUBE_URL_RE = re.compile(
@@ -81,7 +81,7 @@ relates to that verse's theme. It MUST be:
    - a standard long-form video (a normal /watch?v= URL), NOT a YouTube Short
    - talking-head / vlog style: someone speaking directly to camera (sermon clip, \
 devotional, vlog), not pure cinematic B-roll
-   - approximately 5 to 10 minutes long — go with the best duration estimate the \
+   - approximately 2 to 10 minutes long — go with the best duration estimate the \
 search results give you (search snippets usually show it next to the title); the \
 video's exact length gets independently verified after you answer, so don't spend \
 extra searches confirming it yourself. Favor short devotional clips, "daily \
@@ -224,7 +224,7 @@ def validate_video(url, youtube_api_key):
         direction = "too long" if duration_seconds > MAX_DURATION_SECONDS else "too short"
         return None, (
             f'"{items[0]["snippet"]["title"]}" is actually {actual} long ({direction}). '
-            f"Need a different video between 5:00 and 10:00."
+            f"Need a different video between 2:00 and 10:00."
         )
 
     return {
