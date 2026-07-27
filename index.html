@@ -125,6 +125,24 @@
     font-size: 13px;
     color: var(--text-secondary);
   }
+  .masthead-row{
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s6);
+  }
+  .masthead-note{
+    max-width: 280px;
+    margin: 22px var(--s5) 0 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    text-align: right;
+  }
+  @media (max-width: 640px){
+    .masthead-row{ flex-direction: column; }
+    .masthead-note{ max-width: none; text-align: left; margin-top: var(--s3); }
+  }
 
   /* ------------------------------- cards --------------------------------- */
   .card{
@@ -340,12 +358,19 @@
 
 <main class="app">
   <header class="masthead">
-    <div class="eyebrow">
-      <span class="eyebrow-dot"></span>
-      <span class="eyebrow-text">Building Men Who Show Up</span>
+    <div class="masthead-row">
+      <div class="masthead-main">
+        <div class="eyebrow">
+          <span class="eyebrow-dot"></span>
+          <span class="eyebrow-text">Building Men Who Show Up</span>
+        </div>
+        <h1>Scattered to Steadfast</h1>
+        <div class="date mono" id="todayDate">&nbsp;</div>
+      </div>
+      <p class="masthead-note">
+        For men who struggle to open their Bible every day. A new verse, video, and reflection — refreshed automatically, every morning.
+      </p>
     </div>
-    <h1>Scattered to Steadfast</h1>
-    <div class="date mono" id="todayDate">&nbsp;</div>
   </header>
 
   <div id="stage">
