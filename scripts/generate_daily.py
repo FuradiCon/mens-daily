@@ -2,11 +2,13 @@
 Daily pipeline for the "Scattered to Steadfast" page.
 
 Uses the Anthropic API (with the web search tool) to pick a fresh NLT verse
-about manhood/fatherhood, find a real 2-10 minute talking-head YouTube video
-that matches it, and write a short reflection. The video is independently
-verified against the YouTube oEmbed endpoint and the YouTube Data API before
-anything is published, so a hallucinated URL or duration never reaches the
-site. Writes docs data to data.json / history.json in the project root.
+about manhood/fatherhood, find real 1-10 minute talking-head YouTube video
+candidates that match it, and write a short reflection. Each attempt asks for
+several ranked video candidates rather than just one, and all of them are
+checked locally against the YouTube oEmbed endpoint and the YouTube Data API
+before anything is published — this lets a dead link or bad duration get
+filtered for free within the same attempt instead of costing a fresh paid
+model call. Writes docs data to data.json / history.json in the project root.
 """
 
 import json
@@ -54,8 +56,9 @@ INPUT_USD_PER_MTOK = 2.0
 OUTPUT_USD_PER_MTOK = 10.0
 WEB_SEARCH_USD_PER_1000 = 10.0
 
-MIN_DURATION_SECONDS = 2 * 60
+MIN_DURATION_SECONDS = 1 * 60
 MAX_DURATION_SECONDS = 10 * 60
+VIDEO_CANDIDATES_PER_ATTEMPT = 3
 
 YOUTUBE_URL_RE = re.compile(
     r"(?:youtube\.com/watch\?v=|youtu\.be/)([A-Za-z0-9_-]{11})"
@@ -76,18 +79,20 @@ Translation (NLT) that speaks to manhood, fatherhood, or leading a family well. 
 Do not reuse any reference in the "recently used" list below. One quick search to \
 confirm the exact NLT wording (e.g. the reference plus "NLT") is enough — don't \
 cross-check multiple sites for this.
-2. One or two searches to find ONE real, currently-live YouTube video that closely \
-relates to that verse's theme. It MUST be:
+2. A few searches to find THREE different real, currently-live YouTube videos that \
+closely relate to that verse's theme, ranked best-first. Each candidate MUST be:
    - a standard long-form video (a normal /watch?v= URL), NOT a YouTube Short
    - talking-head / vlog style: someone speaking directly to camera (sermon clip, \
 devotional, vlog), not pure cinematic B-roll
-   - approximately 2 to 10 minutes long — go with the best duration estimate the \
-search results give you (search snippets usually show it next to the title); the \
+   - approximately 1 to 10 minutes long — go with the best duration estimate the \
+search results give you (search snippets usually show it next to the title); each \
 video's exact length gets independently verified after you answer, so don't spend \
 extra searches confirming it yourself. Favor short devotional clips, "daily \
 encouragement" style videos, or sermon excerpts, which tend to run this short, over \
 full-length sermons.
-   Do not reuse any video URL in the "recently used" list below.
+   Do not reuse any video URL in the "recently used" list below. Give three genuinely \
+different videos (not the same video from different links) so that if one turns out \
+to be a dead link or the wrong length, there are working backups.
 3. Write a short, practical, 2-3 sentence reflection connecting the verse to \
 everyday fatherhood/manhood — warm and direct, not preachy.
 
@@ -96,7 +101,11 @@ text, no markdown code fences, matching exactly this shape:
 
 {
   "verse": {"reference": "Book Chapter:Verse", "text": "exact NLT wording", "translation": "NLT"},
-  "video": {"title": "...", "channel": "...", "url": "https://www.youtube.com/watch?v=...", "duration": "M:SS"},
+  "videos": [
+    {"title": "...", "channel": "...", "url": "https://www.youtube.com/watch?v=...", "duration": "M:SS"},
+    {"title": "...", "channel": "...", "url": "https://www.youtube.com/watch?v=...", "duration": "M:SS"},
+    {"title": "...", "channel": "...", "url": "https://www.youtube.com/watch?v=...", "duration": "M:SS"}
+  ],
   "reflection": "..."
 }
 """
@@ -224,7 +233,7 @@ def validate_video(url, youtube_api_key):
         direction = "too long" if duration_seconds > MAX_DURATION_SECONDS else "too short"
         return None, (
             f'"{items[0]["snippet"]["title"]}" is actually {actual} long ({direction}). '
-            f"Need a different video between 2:00 and 10:00."
+            f"Need a different video between 1:00 and 10:00."
         )
 
     return {
@@ -236,24 +245,34 @@ def validate_video(url, youtube_api_key):
     }, None
 
 
-def is_duplicate(candidate, history, lookback_days):
+def verse_is_duplicate(reference, history, lookback_days):
     """Hard check backing up the prompt's "don't repeat" instruction — the
     model can ignore instructions, but this always rejects an exact repeat
-    of a reference or video within the lookback window."""
+    of a reference within the lookback window."""
     cutoff = datetime.now(timezone.utc).timestamp() - lookback_days * 86400
-    ref = (candidate.get("verse", {}).get("reference") or "").strip().lower()
-    url = candidate.get("video", {}).get("url") or ""
-    video_match = YOUTUBE_URL_RE.search(url)
-    video_id = video_match.group(1) if video_match else None
-
+    ref = (reference or "").strip().lower()
     for entry in history:
         if _safe_ts(entry.get("date")) < cutoff:
             continue
         if ref and (entry.get("reference") or "").strip().lower() == ref:
-            return f'"{candidate["verse"]["reference"]}" was already used on {entry["date"]}. Pick a different verse.'
+            return f'"{reference}" was already used on {entry["date"]}. Pick a different verse.'
+    return None
+
+
+def video_is_duplicate(url, history, lookback_days):
+    """Same idea as verse_is_duplicate, but for a single video URL."""
+    cutoff = datetime.now(timezone.utc).timestamp() - lookback_days * 86400
+    video_match = YOUTUBE_URL_RE.search(url or "")
+    video_id = video_match.group(1) if video_match else None
+    if not video_id:
+        return None
+
+    for entry in history:
+        if _safe_ts(entry.get("date")) < cutoff:
+            continue
         entry_match = YOUTUBE_URL_RE.search(entry.get("videoUrl") or "")
         entry_id = entry_match.group(1) if entry_match else None
-        if video_id and entry_id and video_id == entry_id:
+        if entry_id and video_id == entry_id:
             return (
                 f'That video was already used on {entry["date"]} (for {entry.get("reference", "?")}). '
                 f"Pick a different video."
@@ -336,22 +355,48 @@ def main():
             feedback = ask_error
             continue
 
-        dup_reason = is_duplicate(candidate, history, HISTORY_LOOKBACK_DAYS)
-        if dup_reason:
-            print(f"Attempt {attempt}: rejected — {dup_reason}", file=sys.stderr)
-            feedback = dup_reason
+        verse_dup_reason = verse_is_duplicate(
+            candidate.get("verse", {}).get("reference"), history, HISTORY_LOOKBACK_DAYS
+        )
+        if verse_dup_reason:
+            print(f"Attempt {attempt}: rejected — {verse_dup_reason}", file=sys.stderr)
+            feedback = verse_dup_reason
             continue
 
-        video_info, error = validate_video(candidate.get("video", {}).get("url"), youtube_api_key)
-        if error:
-            print(f"Attempt {attempt}: rejected — {error}", file=sys.stderr)
-            feedback = error
+        # Check every candidate video locally (oEmbed + duration, no API cost)
+        # before giving up on this attempt — a dead link or bad duration on
+        # one candidate shouldn't waste the whole paid model call.
+        videos = candidate.get("videos") or []
+        video_rejections = []
+        chosen_video = None
+        for i, video in enumerate(videos, start=1):
+            video_dup_reason = video_is_duplicate(video.get("url"), history, HISTORY_LOOKBACK_DAYS)
+            if video_dup_reason:
+                video_rejections.append(f"Candidate {i} ({video.get('url')}): {video_dup_reason}")
+                continue
+
+            video_info, error = validate_video(video.get("url"), youtube_api_key)
+            if error:
+                video_rejections.append(f"Candidate {i} ({video.get('url')}): {error}")
+                continue
+
+            video["thumbnail"] = video_info["thumbnail"]
+            if video_info["duration_seconds"] is not None:
+                video["duration"] = format_duration(video_info["duration_seconds"])
+            chosen_video = video
+            break
+
+        if chosen_video is None:
+            reasons = "; ".join(video_rejections) if video_rejections else "No video candidates were provided"
+            print(f"Attempt {attempt}: rejected — {reasons}", file=sys.stderr)
+            feedback = f"All {len(videos)} video candidates were rejected: {reasons}"
             continue
 
-        candidate["video"]["thumbnail"] = video_info["thumbnail"]
-        if video_info["duration_seconds"] is not None:
-            candidate["video"]["duration"] = format_duration(video_info["duration_seconds"])
-        accepted = candidate
+        accepted = {
+            "verse": candidate["verse"],
+            "video": chosen_video,
+            "reflection": candidate["reflection"],
+        }
         break
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
