@@ -120,6 +120,13 @@ def load_json(path, default):
     return default
 
 
+def already_published_today(existing_entry, today):
+    """True if data.json's existing entry already covers `today` (YYYY-MM-DD).
+    Backs the once-per-24h guard — makes it safe for GitHub's schedule trigger
+    and the phone trigger to both fire on the same day without double cost."""
+    return bool(existing_entry) and existing_entry.get("date") == today
+
+
 def recent_history_text(history):
     cutoff = datetime.now(timezone.utc).timestamp() - HISTORY_LOOKBACK_DAYS * 86400
     recent = []
@@ -323,6 +330,12 @@ def record_usage(today, run_usage, published):
 
 
 def main():
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    existing_entry = load_json(DATA_PATH, None)
+    if already_published_today(existing_entry, today):
+        print(f"Already published for {today}; skipping (once-per-day guard).")
+        sys.exit(0)
+
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if not anthropic_key:
         print("ANTHROPIC_API_KEY is not set; aborting.", file=sys.stderr)
@@ -399,7 +412,6 @@ def main():
         }
         break
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     record_usage(today, run_usage, published=accepted is not None)
 
     if accepted is None:
