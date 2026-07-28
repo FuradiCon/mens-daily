@@ -120,6 +120,13 @@ def load_json(path, default):
     return default
 
 
+def already_published_today(existing_entry, today):
+    """True if data.json's existing entry already covers `today` (YYYY-MM-DD).
+    Backs the once-per-24h guard — makes it safe for GitHub's schedule trigger
+    and the phone trigger to both fire on the same day without double cost."""
+    return bool(existing_entry) and existing_entry.get("date") == today
+
+
 def recent_history_text(history):
     cutoff = datetime.now(timezone.utc).timestamp() - HISTORY_LOOKBACK_DAYS * 86400
     recent = []
