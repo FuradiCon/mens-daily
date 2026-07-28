@@ -29,8 +29,12 @@ anything.
      - `Accept: application/vnd.github+json`
      - `Content-Type: application/json`
    - Request body (JSON): `{"ref": "master"}`
-3. Open the shortcut's settings → **Scheduling** → add a new daily schedule at
-   whatever local time you want it to fire (e.g. 6:30 AM local).
+3. Open the shortcut's **Trigger & Execution Settings** → **Run repeatedly** → set
+   it to **24 hours**. There's no clock-time picker — the interval is anchored to
+   whenever you enable/save it, so turn it on right at the time of day you want it
+   to keep firing (e.g. enable it at 6:30 AM local to have it fire around 6:30 AM
+   every day after that). If it ever misses a cycle it resyncs to a new anchor time,
+   so expect some drift over weeks rather than exact daily precision.
 
 ## 3. Make Samsung's battery management leave it alone
 
