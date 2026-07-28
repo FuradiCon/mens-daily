@@ -18,9 +18,9 @@ anything.
 7. Generate token and copy it somewhere safe — GitHub only shows it once. You'll
    paste it into the app in step 2.
 
-## 2. Install and configure HTTP Shortcuts
+## 2. Install and configure HTTP Request Shortcuts
 
-1. Install **HTTP Shortcuts** from the Play Store.
+1. Install **HTTP Request Shortcuts** (by Waboodoo) from the Play Store.
 2. Create a new shortcut with:
    - Method: `POST`
    - URL: `https://api.github.com/repos/FuradiCon/mens-daily/actions/workflows/daily-update.yml/dispatches`
@@ -36,14 +36,14 @@ anything.
 
 One UI aggressively kills background schedules unless you exempt the app:
 
-1. Settings → Apps → HTTP Shortcuts → Battery → set to **Unrestricted**.
+1. Settings → Apps → HTTP Request Shortcuts → Battery → set to **Unrestricted**.
 2. Settings → Battery and device care → Background usage limits → make sure
-   HTTP Shortcuts is **not** listed under "Sleeping apps" or "Deep sleeping apps"
+   HTTP Request Shortcuts is **not** listed under "Sleeping apps" or "Deep sleeping apps"
    (remove it if it is).
 
 ## 4. Test it
 
-1. In HTTP Shortcuts, tap the shortcut to fire it manually right now.
+1. In HTTP Request Shortcuts, tap the shortcut to fire it manually right now.
 2. Go to https://github.com/FuradiCon/mens-daily/actions and confirm a new
    "Daily Verse Update" run appears, triggered by `workflow_dispatch`.
 3. If nothing appears: double check the token has Actions "Read and write" on the
