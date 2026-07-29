@@ -14,7 +14,7 @@ jobs:
         run: |
           BASE="https://furadi.goatcounter.com/api/v0"
           START=$(date -u -d '14 days ago' +%Y-%m-%d)
-          END=$(date -u +%Y-%m-%d)
+          END=$(date -u -d 'tomorrow' +%Y-%m-%d)
           echo "Window: $START -> $END"
 
           probe () {
