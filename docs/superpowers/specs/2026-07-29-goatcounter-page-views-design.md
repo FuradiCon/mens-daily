@@ -52,8 +52,13 @@ run is skipped — and runs do get skipped, which is why the phone trigger exist
 next run backfills the gap instead of leaving a permanent hole. It costs one request
 either way.
 
-Day-row shape is unchanged: `{"d": "YYYY-MM-DD", "views": N, "uniques": N}`, sorted by
-date, trimmed to `KEEP_DAYS = 180`. Existing upsert-by-date logic is preserved.
+Day rows are `{"d": "YYYY-MM-DD", "views": N}`, sorted by date, trimmed to
+`KEEP_DAYS = 180`. Existing upsert-by-date logic is preserved.
+
+**`uniques` is dropped.** The original plan kept it, but probing the live API showed
+GoatCounter exposes exactly one number per day — its docs call `total` "visitors," and it
+is already de-duplicated by session. There is no pageviews-vs-uniques distinction to
+fetch, so a second field would only have mirrored the first.
 
 **The envelope does change.** `traffic.json` is currently a top-level JSON array, which
 has nowhere to put the observability fields. It becomes an object:
@@ -146,16 +151,32 @@ Order matters, because the parser must be written against reality:
 3. Make one real API call and capture the actual response.
 4. **Then** write the parser and the fixture against that captured response.
 
-## Open item
+## Resolved: confirmed API shape
 
-The exact JSON shape for a per-day views+uniques series has **not** been verified against
-the live API. `/api/v0/stats/total` and `/api/v0/stats/hits` both exist and accept
-`start`/`end`, but the field names and nesting are taken from documentation summaries,
-not from an observed response. Step 3 above closes this before any parsing code is
-written.
+Probed 2026-07-29 via a temporary Actions workflow (the token lives only in repo secrets,
+so the probe ran inside CI rather than from a workstation; removed afterwards).
 
-The token lives only in repo secrets and is not available locally, so the probe runs as a
-one-off step inside GitHub Actions rather than from a workstation.
+`GET /api/v0/stats/total?start=&end=` returns:
+
+```json
+{
+  "total": 1, "total_events": 0, "total_utc": 1,
+  "stats": [ { "day": "2026-07-29", "hourly": [ 24 ints ], "daily": 1 } ]
+}
+```
+
+The parser reads `stats[].day` and `stats[].daily`. Recorded verbatim as
+`tests/fixtures/goatcounter_stats_total.json`.
+
+Two gotchas found while probing:
+
+- **The API answers in the site's timezone, not UTC.** Requesting `start=2026-07-15&
+  end=2026-07-29` returned days `2026-07-14` → `2026-07-28`. The fetch window therefore
+  asks for `tomorrow` as its end date to be certain today is included.
+- **Bot filtering is real and server-side.** A visit from the in-app browser
+  (`Claude/… Electron/…` user agent) did not register even though client-side
+  `goatcounter.filter()` returned `false`. Correct behaviour, but worth knowing before
+  concluding the tag is broken during future testing.
 
 ## Out of scope
 
