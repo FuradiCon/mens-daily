@@ -30,11 +30,28 @@ anything.
      - `Content-Type: application/json`
    - Request body (JSON): `{"ref": "master"}`
 3. Open the shortcut's **Trigger & Execution Settings** → **Run repeatedly** → set
-   it to **24 hours**. There's no clock-time picker — the interval is anchored to
-   whenever you enable/save it, so turn it on right at the time of day you want it
-   to keep firing (e.g. enable it at 6:30 AM local to have it fire around 6:30 AM
-   every day after that). If it ever misses a cycle it resyncs to a new anchor time,
-   so expect some drift over weeks rather than exact daily precision.
+   it to **24 hours**. There's no clock-time picker — the schedule is anchored to a
+   moment in time, so set it at the time of day you want it firing.
+
+### How the repeat interval actually works
+
+Verified against the app's source (`GetNextRepetitionTimeUseCase`, `Execution.kt`,
+`ExecutionWorker.kt`) rather than inferred from the docs, because the behavior is
+not documented publicly:
+
+- **Scheduled runs keep the original anchor.** Each repeat carries its `triggeredAt`
+  forward, and the next fire is computed as `anchor + interval × (N+1)` — a fixed
+  grid. Timing does not drift, and a reboot recreates the schedule rather than
+  dropping it (app v3.31.0+).
+- **A manual tap re-anchors the whole schedule to that moment.** Running the shortcut
+  by hand deletes the pending repeat and creates a new one anchored at "now"
+  (`scheduleRepetitionIfNeeded(params.triggeredAt ?: Instant.now())`, where a manual
+  launch supplies no `triggeredAt`). So tapping the shortcut at midnight moves the
+  daily slot to midnight — no need to toggle the setting off and back on.
+- Fire times are rounded to the nearest **5 minutes**.
+- Edge case: if the computed next fire lands less than **20% of the interval** away,
+  it skips one cycle. On a 24h interval that is a ~4.8h dead zone. A manual tap never
+  hits it, since that always schedules a full interval out.
 
 ## 3. Make Samsung's battery management leave it alone
 
