@@ -36,7 +36,7 @@ jobs:
       - name: Record page traffic
         continue-on-error: true  # a secondary metric must never block the day's actual content from publishing
         env:
-          GH_TOKEN: ${{ secrets.TRAFFIC_PAT }}
+          GOATCOUNTER_TOKEN: ${{ secrets.GOATCOUNTER_TOKEN }}
         run: python scripts/record_traffic.py
 
       - name: Commit and push if changed
