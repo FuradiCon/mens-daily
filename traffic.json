@@ -1,6 +1,6 @@
 {
-  "fetched_at": "2026-08-04T17:09:29Z",
-  "last_error": "HTTPError: 404 Client Error: Not Found for url: https://furadi.goatcounter.com/api/v0/stats/total?start=2026-07-22&end=2026-08-06",
+  "fetched_at": "2026-08-05T16:22:53Z",
+  "last_error": null,
   "days": [
     {
       "d": "2026-07-14",
@@ -88,6 +88,10 @@
     },
     {
       "d": "2026-08-04",
+      "views": 0
+    },
+    {
+      "d": "2026-08-05",
       "views": 0
     }
   ]
